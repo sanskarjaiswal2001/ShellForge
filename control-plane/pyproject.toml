@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Enterprise control plane for NVIDIA OpenShell"
 readme = "../README.md"
 requires-python = ">=3.12"
-license = { text = "Proprietary" }
+license = { text = "PolyForm-Noncommercial-1.0.0" }
 
 dependencies = [
     # ── Web framework ─────────────────────────────────────────────────────

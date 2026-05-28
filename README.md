@@ -74,7 +74,15 @@ Login: `alice@acme-health.demo` / `demo1234`
 - Terraform provider
 - SCIM 2.0 enterprise provisioning
 
+## License
+
+ShellForge is licensed under the [PolyForm Noncommercial License 1.0.0](./LICENSE).
+You may use, modify, and distribute it for any noncommercial purpose.
+Commercial use requires a separate license — open an issue or contact the maintainer.
+
 ## Credits
 
-Sandbox runtime: [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) (Apache 2.0)  
+Sandbox runtime: [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) (Apache 2.0)
 ShellForge adds the enterprise control plane above it.
+
+Required Notice: Copyright Sanskar Jaiswal (https://github.com/sanskarjaiswal2001/ShellForge)
