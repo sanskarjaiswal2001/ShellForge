@@ -1,0 +1,216 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ShellForge — Local Development Stack
+# ═══════════════════════════════════════════════════════════════════════════
+# Every service marked [SWAP] is hidden behind a protocol interface in the
+# control plane. Replace the service here (and update the matching env var
+# in .env) to swap implementations without changing application code.
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: shellforge
+
+networks:
+  shellforge:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  infisical-data:
+  loki-data:
+  grafana-data:
+
+services:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Postgres — primary datastore. RLS enforces tenant isolation at DB layer.
+  # ─────────────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: shellforge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shellforge
+      POSTGRES_PASSWORD: shellforge
+      POSTGRES_DB: shellforge
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shellforge -d shellforge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - shellforge
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Dex — [SWAP] OIDC broker. Static-password connector for local dev.
+  # In prod, swap connector to Okta / Azure AD / Google Workspace via
+  # deploy/dex/config.yaml — no control-plane code changes required.
+  # ─────────────────────────────────────────────────────────────────────────
+  dex:
+    image: ghcr.io/dexidp/dex:v2.41.1
+    container_name: shellforge-dex
+    restart: unless-stopped
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./dex/config.yaml:/etc/dex/config.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5556/dex/.well-known/openid-configuration || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - shellforge
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Infisical — [SWAP] secrets backend. Swap to Vault/AWS SM by changing
+  # SECRET_BACKEND env var; SecretProvider protocol hides the difference.
+  # ─────────────────────────────────────────────────────────────────────────
+  infisical:
+    image: infisical/infisical:v0.97.0-postgres
+    container_name: shellforge-infisical
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENCRYPTION_KEY: "6c1fe4e407b8911c104518103505b218"
+      AUTH_SECRET: "5lrMXKKWCVocS/uerPsl7V+TX/aaUaI7iDelBePyyzgMI="
+      DB_CONNECTION_URI: "postgres://shellforge:shellforge@postgres:5432/shellforge?sslmode=disable&search_path=infisical"
+      REDIS_URL: "redis://infisical-redis:6379"
+      SITE_URL: "http://localhost:8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      infisical-redis:
+        condition: service_started
+    networks:
+      - shellforge
+
+  infisical-redis:
+    image: redis:7-alpine
+    container_name: shellforge-infisical-redis
+    restart: unless-stopped
+    networks:
+      - shellforge
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # OTel Collector — [SWAP] audit fan-out hub. Add a new SIEM target by
+  # adding an exporter in deploy/otel-collector/config.yaml.
+  # ─────────────────────────────────────────────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.113.0
+    container_name: shellforge-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    networks:
+      - shellforge
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Loki + Grafana — local audit visualization. Production swap: Splunk HEC,
+  # Elastic, Amazon Security Lake — config in otel-collector/config.yaml.
+  # ─────────────────────────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: shellforge-loki
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki-data:/loki
+    networks:
+      - shellforge
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: shellforge-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki
+    networks:
+      - shellforge
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # OpenShell Gateway — sandbox runtime. [SWAP] target: ComputeProvider
+  # protocol allows replacing OpenShell with direct Docker / k8s if needed.
+  # Pinned commit: 6c7950da900921a24aa65e79c7b522ba12fd7875 (2026-05-27)
+  # ─────────────────────────────────────────────────────────────────────────
+  openshell-gateway:
+    image: ghcr.io/nvidia/openshell:main
+    container_name: shellforge-openshell
+    restart: unless-stopped
+    privileged: true                       # required for sandbox isolation primitives
+    environment:
+      OPENSHELL_DB_URL: "postgresql://shellforge:shellforge@postgres:5432/shellforge?search_path=openshell"
+      OPENSHELL_SERVER_DISABLE_TLS: "true"   # local dev only
+      OPENSHELL_COMPUTE_DRIVER: "docker"
+    ports:
+      - "50051:50051"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - shellforge
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # ShellForge Control Plane (Python / FastAPI)
+  # ─────────────────────────────────────────────────────────────────────────
+  control-plane:
+    build:
+      context: ../control-plane
+      dockerfile: ../deploy/control-plane.Dockerfile
+    container_name: shellforge-control-plane
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dex:
+        condition: service_healthy
+    networks:
+      - shellforge
+    profiles: ["app"]                      # `make up` skips this; brought up after migrations
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # ShellForge Dashboard (Next.js)
+  # ─────────────────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: ../web
+      dockerfile: ../deploy/web.Dockerfile
+    container_name: shellforge-web
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    ports:
+      - "3000:3000"
+    depends_on:
+      - control-plane
+    networks:
+      - shellforge
+    profiles: ["app"]

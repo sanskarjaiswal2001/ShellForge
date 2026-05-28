@@ -1,0 +1,140 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Dex — OIDC Broker Configuration
+# ═══════════════════════════════════════════════════════════════════════════
+# Local dev: static passwords + static client.
+# Enterprise swap: change the `connectors` block below to Okta/Azure AD/etc.
+# The ShellForge control plane never sees this config — it only consumes
+# the OIDC endpoint that Dex exposes.
+#
+# Swap examples in comments below — uncomment to switch IdP.
+# ═══════════════════════════════════════════════════════════════════════════
+
+issuer: http://dex:5556/dex
+
+storage:
+  type: memory                    # swap to: postgres / sqlite3 for persistence
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+  responseTypes: ["code"]
+
+# ─── Static OIDC client for ShellForge ─────────────────────────────────────
+staticClients:
+  - id: shellforge-web
+    name: ShellForge Dashboard
+    secret: local-dev-only-replace-in-prod
+    redirectURIs:
+      - http://localhost:3000/auth/callback
+      - http://localhost:3000/api/auth/callback/dex
+    public: false
+
+  # CLI client (PKCE, no secret)
+  - id: shellforge-cli
+    name: ShellForge CLI
+    public: true
+    redirectURIs:
+      - http://localhost:8000/auth/cli-callback
+
+# ─── Connectors (the SWAP point) ───────────────────────────────────────────
+# DEFAULT: enable password DB for local dev
+enablePasswordDB: true
+
+# Static demo users. Tenant claim is injected via groups.
+# In prod, REMOVE this entirely — connectors below provide identity.
+staticPasswords:
+  # ── Acme Health (HIPAA) ──
+  - email: "alice@acme-health.demo"
+    # password: demo1234
+    hash: "$2a$10$P1pCNiV5O8VtgM6IqGY6OutwfRfQ/PWcMHK.RnoX9KZIzCfDtSCAa"
+    username: "alice"
+    userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+  - email: "bob@acme-health.demo"
+    hash: "$2a$10$P1pCNiV5O8VtgM6IqGY6OutwfRfQ/PWcMHK.RnoX9KZIzCfDtSCAa"
+    username: "bob"
+    userID: "1aa7f8db-7ad9-4f0f-b3e6-c8a8c4f6d5d2"
+  # ── Bolt Bank (PCI) ──
+  - email: "carol@bolt-bank.demo"
+    hash: "$2a$10$P1pCNiV5O8VtgM6IqGY6OutwfRfQ/PWcMHK.RnoX9KZIzCfDtSCAa"
+    username: "carol"
+    userID: "2bb8e9ec-8be0-5a10-c4f7-d9b9d5g7e6e3"
+  # ── Nexus Corp (SOC2) ──
+  - email: "dave@nexus-corp.demo"
+    hash: "$2a$10$P1pCNiV5O8VtgM6IqGY6OutwfRfQ/PWcMHK.RnoX9KZIzCfDtSCAa"
+    username: "dave"
+    userID: "3cc9faff-9cf1-6b21-d5g8-e0c0e6h8f7f4"
+
+# ─── Custom claims: emit `tenant_id` and `roles` per user ──────────────────
+# ShellForge expects these claims in every JWT. Mapped from Dex groups.
+# ─── ENTERPRISE SWAP TARGETS (uncomment + remove staticPasswords above) ────
+#
+# connectors:
+#
+#   # Okta (OIDC)
+#   - type: oidc
+#     id: okta
+#     name: Okta
+#     config:
+#       issuer: https://<tenant>.okta.com
+#       clientID: <okta-client-id>
+#       clientSecret: <okta-client-secret>
+#       redirectURI: http://dex:5556/dex/callback
+#       scopes: [openid, profile, email, groups]
+#       insecureSkipEmailVerified: false
+#
+#   # Azure AD (Microsoft Entra ID)
+#   - type: microsoft
+#     id: microsoft
+#     name: Microsoft
+#     config:
+#       clientID: <azure-app-id>
+#       clientSecret: <azure-secret>
+#       redirectURI: http://dex:5556/dex/callback
+#       tenant: <azure-tenant-uuid>
+#
+#   # Google Workspace
+#   - type: google
+#     id: google
+#     name: Google
+#     config:
+#       clientID: <google-client-id>
+#       clientSecret: <google-secret>
+#       redirectURI: http://dex:5556/dex/callback
+#       hostedDomains:
+#         - acme-health.com
+#
+#   # LDAP / Active Directory
+#   - type: ldap
+#     id: ldap
+#     name: LDAP
+#     config:
+#       host: ldap.corp.local:636
+#       bindDN: cn=service,ou=services,dc=corp,dc=local
+#       bindPW: <password>
+#       userSearch:
+#         baseDN: ou=users,dc=corp,dc=local
+#         filter: "(objectClass=person)"
+#         username: uid
+#         idAttr: uid
+#         emailAttr: mail
+#       groupSearch:
+#         baseDN: ou=groups,dc=corp,dc=local
+#         filter: "(objectClass=group)"
+#         userMatchers:
+#           - userAttr: DN
+#             groupAttr: member
+#         nameAttr: cn
+#
+#   # SAML 2.0 (legacy Ping / ADFS / etc.)
+#   - type: saml
+#     id: saml
+#     name: SAML
+#     config:
+#       ssoURL: https://idp.corp.local/saml2/idp/SSOService.php
+#       ca: /etc/dex/saml-idp.crt
+#       redirectURI: http://dex:5556/dex/callback
+#       usernameAttr: name
+#       emailAttr: email
+#       groupsAttr: groups

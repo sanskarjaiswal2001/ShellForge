@@ -1,0 +1,114 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# OpenTelemetry Collector — Audit Fan-Out Hub
+# ═══════════════════════════════════════════════════════════════════════════
+# This collector receives OCSF-formatted audit events from the ShellForge
+# control plane over OTLP, then fans them out to one or more sinks.
+#
+# Adding a new SIEM target = adding an exporter below + adding it to the
+# `service.pipelines.logs.exporters` list. ZERO control-plane code changes.
+#
+# Default local-dev pipeline: receivers → processors → Loki.
+# Uncomment Splunk/Elastic/AWS exporters to add enterprise SIEM targets.
+# ═══════════════════════════════════════════════════════════════════════════
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # ─── Batch events for efficient export ─────────────────────────────────────
+  batch:
+    timeout: 5s
+    send_batch_size: 100
+    send_batch_max_size: 1000
+
+  # ─── Enforce tenant_id presence on every log record ───────────────────────
+  # Drops events without tenant_id — defense in depth against audit-bypass bugs.
+  attributes/require-tenant:
+    actions:
+      - key: tenant_id
+        action: extract
+        pattern: ^(?P<tenant_id>[a-z0-9-]+)$
+        from_attribute: tenant_id
+
+  # ─── Add resource attributes ──────────────────────────────────────────────
+  resource:
+    attributes:
+      - key: service.namespace
+        value: shellforge
+        action: upsert
+      - key: deployment.environment
+        from_attribute: env
+        action: upsert
+
+exporters:
+  # ─── Loki (local dev visualization via Grafana) ───────────────────────────
+  loki:
+    endpoint: http://loki:3100/loki/api/v1/push
+    default_labels_enabled:
+      exporter: false
+      job: true
+
+  # ─── Debug exporter for local troubleshooting ─────────────────────────────
+  debug:
+    verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 100
+
+  # ─── Splunk HEC (enterprise) ─ uncomment + configure to enable ────────────
+  # splunk_hec:
+  #   token: "${env:SPLUNK_HEC_TOKEN}"
+  #   endpoint: "https://splunk.corp.local:8088/services/collector"
+  #   source: "shellforge"
+  #   sourcetype: "shellforge:ocsf"
+  #   index: "security"
+  #   tls:
+  #     insecure_skip_verify: false
+  #     ca_file: /etc/otel/splunk-ca.pem
+
+  # ─── Elasticsearch (enterprise) ─ uncomment + configure to enable ─────────
+  # elasticsearch:
+  #   endpoints: ["https://elastic.corp.local:9200"]
+  #   logs_index: "shellforge-audit"
+  #   user: "${env:ELASTIC_USER}"
+  #   password: "${env:ELASTIC_PASSWORD}"
+
+  # ─── AWS Security Lake (enterprise OCSF-native) ─ uncomment to enable ─────
+  # awss3:
+  #   s3uploader:
+  #     region: us-east-1
+  #     s3_bucket: "shellforge-security-lake"
+  #     s3_prefix: "ocsf/v1.7.0"
+  #     s3_partition_format: "year=%Y/month=%m/day=%d/hour=%H"
+
+  # ─── File (audit archive, regulatory retention) ──────────────────────────
+  # file:
+  #   path: /var/log/shellforge/audit-${env:DATE}.jsonl
+
+service:
+  telemetry:
+    logs:
+      level: info
+
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [attributes/require-tenant, resource, batch]
+      exporters: [loki, debug]
+      # PROD: append [splunk_hec, elasticsearch, awss3, file] as needed
+
+    # Traces from the control plane (request tracing)
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+
+    # Metrics (fleet health, token spend)
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

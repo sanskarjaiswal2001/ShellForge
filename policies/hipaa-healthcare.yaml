@@ -1,0 +1,95 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ShellForge Policy: HIPAA — Healthcare AI Agent
+# ═══════════════════════════════════════════════════════════════════════════
+# Compliance regime: HIPAA (45 CFR Part 164)
+# Use case:         Healthcare client coding agent — must not exfiltrate PHI
+# Controls:
+#   §164.308(a)(1) — Security management process (default-deny)
+#   §164.312(a)(1) — Access control (explicit allowlist, no wildcards)
+#   §164.312(c)(1) — Integrity (hard_requirement landlock)
+#   §164.312(e)(2)(ii) — Encryption in transit (tls: Auto on all endpoints)
+#   §164.312(b) — Audit controls (enforcement: Enforce — all denials logged)
+#
+# Author:           ShellForge Compliance Team
+# Last reviewed:    2026-05-29
+# ═══════════════════════════════════════════════════════════════════════════
+
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  # §164.312(c)(1): no write access to system paths
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /proc/self
+    - /etc
+  read_write:
+    - /sandbox
+    - /tmp
+  # No /var/log read — log integrity preserved
+  # No /dev/null write — prevent data destruction shortcuts
+
+landlock:
+  # §164.312(c)(1): integrity controls CANNOT degrade silently.
+  compatibility: hard_requirement
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+network_policies:
+  # §164.312(e)(2)(ii): All endpoints MUST use tls: Auto for encryption-in-transit
+  # §164.312(a)(1): Explicit allowlist — NO wildcards permitted
+
+  anthropic_phi_safe:
+    name: "Anthropic API (PHI must not leave the sandbox)"
+    endpoints:
+      - host: api.anthropic.com
+        port: 443
+        protocol:
+          type: Rest
+          tls: Auto                       # §164.312(e)(2)(ii)
+          enforcement: Enforce            # §164.312(b)
+        rules:
+          - allow: { method: POST, path: "/v1/messages" }
+        binaries:
+          - { path: /usr/local/bin/claude }
+          - { path: /sandbox/.venv/bin/python }
+
+  github_scm_code_only:
+    name: "GitHub SCM (code only, no PHI in commits)"
+    endpoints:
+      - host: github.com
+        port: 443
+        protocol:
+          type: Rest
+          tls: Auto                       # §164.312(e)(2)(ii)
+          enforcement: Enforce            # §164.312(b)
+        rules:
+          - allow: { method: GET,  path: "/*" }
+          - allow: { method: POST, path: "/*/git-upload-pack" }
+        binaries:
+          - { path: /usr/bin/git }
+
+  package_registries_readonly:
+    name: "Package Registries (read-only)"
+    endpoints:
+      - host: registry.npmjs.org
+        port: 443
+        protocol:
+          type: Rest
+          tls: Auto
+          enforcement: Enforce
+        access: read-only
+      - host: files.pythonhosted.org
+        port: 443
+        protocol:
+          type: Rest
+          tls: Auto
+          enforcement: Enforce
+        access: read-only
+
+  # §164.308(a)(1): Default deny.
+  # All other outbound traffic blocked. No fallback rules below this line.

@@ -1,0 +1,98 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ShellForge Policy: SOC 2 — SaaS Development
+# ═══════════════════════════════════════════════════════════════════════════
+# Compliance regime: SOC 2 Type II (AICPA TSC 2017, 2022 revision)
+# Use case:         General SaaS development with audit evidence requirements
+# Controls:
+#   CC6.1 — Logical access controls (Enforce mode on sensitive endpoints)
+#   CC6.6 — Logical access restricted to authorized communications
+#   CC6.7 — Transmissions over public networks protected (tls: Auto)
+#   CC7.2 — Monitoring of system components for anomalies (Audit mode)
+#
+# Author:           ShellForge Compliance Team
+# Last reviewed:    2026-05-29
+# ═══════════════════════════════════════════════════════════════════════════
+
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /proc/self
+    - /etc
+    - /var/log
+  read_write:
+    - /sandbox
+    - /tmp
+
+landlock:
+  # CC6.1: reasonable, not absolute — best_effort acceptable under SOC2
+  compatibility: best_effort
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+network_policies:
+  # ─── CC6.6: Authorized communications ────────────────────────────────────
+  # Audit-mode endpoints emit OCSF events for every request — SOC2 evidence.
+
+  package_registries_audited:
+    name: "Package Registries (CC6.6 — audited)"
+    endpoints:
+      - host: "*.npmjs.com"
+        port: 443
+        protocol:
+          type: Rest
+          tls: Auto                       # CC6.7
+          enforcement: Audit              # CC7.2 — log all requests
+        access: read-only
+      - host: registry.npmjs.org
+        port: 443
+        protocol: { type: Rest, tls: Auto, enforcement: Audit }
+        access: read-only
+      - host: "*.pypi.org"
+        port: 443
+        protocol: { type: Rest, tls: Auto, enforcement: Audit }
+        access: read-only
+      - host: files.pythonhosted.org
+        port: 443
+        protocol: { type: Rest, tls: Auto, enforcement: Audit }
+        access: read-only
+
+  ai_inference_enforced:
+    name: "AI Provider APIs (CC6.1 — enforce, CC6.7 — TLS)"
+    endpoints:
+      - host: api.anthropic.com
+        port: 443
+        protocol:
+          type: Rest
+          tls: Auto
+          enforcement: Enforce            # CC6.1
+        rules:
+          - allow: { method: POST, path: "/v1/messages" }
+        binaries:
+          - { path: /usr/local/bin/claude }
+          - { path: /sandbox/.venv/bin/python }
+
+  github_mixed_mode:
+    name: "GitHub (read audited, write enforced)"
+    endpoints:
+      # Reads: audit-mode for visibility into agent behavior
+      - host: github.com
+        port: 443
+        protocol: { type: Rest, tls: Auto, enforcement: Audit }
+        rules:
+          - allow: { method: GET, path: "/*" }
+      # Writes: enforce-mode for change control
+      - host: github.com
+        port: 443
+        protocol: { type: Rest, tls: Auto, enforcement: Enforce }
+        rules:
+          - allow: { method: POST, path: "/*/git-upload-pack" }
+          - allow: { method: POST, path: "/*/git-receive-pack" }
+        binaries:
+          - { path: /usr/bin/git }
