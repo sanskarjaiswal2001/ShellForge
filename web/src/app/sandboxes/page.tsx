@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Box, Trash2, AlertTriangle, X } from "lucide-react";
+import { Plus, Box, Trash2, AlertTriangle, X, Terminal } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { apiFetch, ApiError, type SandboxOut } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { demoBearer, getActiveUser } from "@/lib/demo-auth";
 import { ProvisioningTimeline } from "@/components/provisioning-timeline";
+import { ConnectionModal } from "@/components/connection-modal";
 
 const POLICY_TEMPLATES = [
   { id: "baseline", label: "Baseline" },
@@ -26,6 +27,7 @@ export default function SandboxesPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [provisioning, setProvisioning] = useState<SandboxOut | null>(null);
+  const [connectTo, setConnectTo] = useState<SandboxOut | null>(null);
   const [form, setForm] = useState({
     name: "",
     agent: "claude",
@@ -183,9 +185,14 @@ export default function SandboxesPage() {
                 onViolation={() => triggerViolation(sb)}
                 onDelete={() => removeSandbox(sb)}
                 onShowProvisioning={() => setProvisioning(sb)}
+                onConnect={() => setConnectTo(sb)}
               />
             ))}
           </div>
+        )}
+
+        {connectTo && (
+          <ConnectionModal sandbox={connectTo} onClose={() => setConnectTo(null)} />
         )}
       </div>
     </AppShell>
@@ -197,11 +204,13 @@ function SandboxCard({
   onViolation,
   onDelete,
   onShowProvisioning,
+  onConnect,
 }: {
   sb: SandboxOut;
   onViolation: () => void;
   onDelete: () => void;
   onShowProvisioning: () => void;
+  onConnect: () => void;
 }) {
   const phaseColor =
     sb.phase === "READY" ? "success" :
@@ -234,10 +243,19 @@ function SandboxCard({
           <Detail label="Policy" value={sb.policy_template} />
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={onViolation} className="flex-1">
-            <AlertTriangle className="w-3.5 h-3.5" /> Simulate violation
+          <Button
+            variant="default"
+            size="sm"
+            onClick={onConnect}
+            disabled={sb.phase !== "READY"}
+            className="flex-1"
+          >
+            <Terminal className="w-3.5 h-3.5" /> Connect
           </Button>
-          <Button variant="ghost" size="sm" onClick={onDelete}>
+          <Button variant="outline" size="sm" onClick={onViolation} title="Simulate violation">
+            <AlertTriangle className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onDelete} title="Delete">
             <Trash2 className="w-3.5 h-3.5 text-destructive" />
           </Button>
         </div>

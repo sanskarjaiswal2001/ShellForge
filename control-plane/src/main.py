@@ -33,6 +33,50 @@ def _configure_logging() -> None:
     )
 
 
+async def _hydrate_compute_from_db() -> None:
+    """On startup, register every DB sandbox with the compute provider.
+
+    Mock provider is in-memory and loses state across restarts; without
+    re-registering, existing sandboxes 404 from the compute view and the
+    UI shows them stuck in PROVISIONING. No-op for real OpenShell (the
+    gateway already owns state)."""
+    from sqlalchemy import select, text
+    from src.db.session import session_factory
+    from src.models.organization import Organization
+    from src.models.sandbox import Sandbox
+    from src.providers.factory import compute_provider
+
+    compute = compute_provider()
+    if not hasattr(compute, "adopt_existing"):
+        return
+
+    log = structlog.get_logger(__name__)
+    async with session_factory()() as session:
+        async with session.begin():
+            await session.execute(text("SET LOCAL ROLE shellforge_admin"))
+            result = await session.execute(
+                select(Sandbox, Organization).join(
+                    Organization, Sandbox.organization_id == Organization.id
+                )
+            )
+            count = 0
+            for sandbox, org in result.all():
+                await compute.adopt_existing(
+                    tenant_id=org.slug,
+                    name=sandbox.name,
+                    uid=sandbox.compute_uid,
+                    agent=sandbox.agent,
+                    labels=dict(sandbox.labels) if sandbox.labels else {},
+                )
+                # Force phase to READY for adopted sandboxes — they
+                # were created in some previous run and we have no way
+                # to replay the lifecycle.
+                if sandbox.phase != "READY":
+                    sandbox.phase = "READY"
+                count += 1
+            log.info("shellforge.hydrate", adopted=count)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: ARG001
     _configure_logging()
@@ -46,6 +90,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: ARG001
         audit_backend=settings.audit_backend,
         compute_backend=settings.compute_backend,
     )
+    try:
+        await _hydrate_compute_from_db()
+    except Exception as e:  # noqa: BLE001
+        log.warning("shellforge.hydrate.failed", error=str(e))
     yield
     log.info("shellforge.shutdown")
 

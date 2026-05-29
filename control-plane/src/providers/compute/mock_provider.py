@@ -102,9 +102,50 @@ class MockComputeProvider(ComputeProvider):
         async with self._lock:
             sandbox = self._sandboxes.get(name)
             if sandbox is None or sandbox.tenant_id != tenant_id:
-                # 404, never 403 — never leak cross-tenant existence.
                 raise SandboxNotFoundError(name)
             return self._to_ref(sandbox)
+
+    async def adopt_existing(
+        self,
+        tenant_id: str,
+        name: str,
+        uid: str,
+        agent: str = "claude",
+        policy_yaml: str = "",
+        compute_driver: str = "docker",
+        labels: dict[str, str] | None = None,
+    ) -> None:
+        """Register a sandbox the mock provider didn't create.
+
+        Used after a control-plane restart to repopulate in-memory state
+        from the DB. Brings the sandbox straight to READY (no replay of
+        provisioning lifecycle) so the UI doesn't see it regress."""
+        async with self._lock:
+            if name in self._sandboxes:
+                return
+            spec = SandboxSpec(
+                name=name,
+                policy_yaml=policy_yaml,
+                agent=agent,
+                providers=(),
+                compute_driver=compute_driver,
+                labels={**(labels or {}), TENANT_LABEL_KEY: tenant_id},
+            )
+            self._sandboxes[name] = _MockSandbox(
+                name=name,
+                uid=uid,
+                tenant_id=tenant_id,
+                spec=spec,
+                phase=SandboxPhase.READY,
+                status_detail="Adopted from control-plane state",
+                timeline=[{
+                    "key": "ready",
+                    "message": "Sandbox already provisioned (adopted on restart)",
+                    "status": "done",
+                    "started_at": datetime.now(UTC).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }],
+            )
 
     async def list_sandboxes(self, tenant_id: str) -> list[SandboxRef]:
         async with self._lock:
