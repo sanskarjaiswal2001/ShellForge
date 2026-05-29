@@ -71,3 +71,4 @@ infisical-data/
 loki-data/
 grafana-data/
 .env.bak
+web/.env.local

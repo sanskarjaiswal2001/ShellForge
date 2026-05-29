@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { SessionProvider } from "next-auth/react";
+import { auth } from "@/auth";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -6,10 +8,13 @@ export const metadata: Metadata = {
   description: "Enterprise control plane for NVIDIA OpenShell",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth();
   return (
     <html lang="en">
-      <body className="min-h-screen antialiased">{children}</body>
+      <body className="min-h-screen antialiased">
+        <SessionProvider session={session}>{children}</SessionProvider>
+      </body>
     </html>
   );
 }

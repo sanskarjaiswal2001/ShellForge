@@ -9,6 +9,7 @@ from src.api.v1 import (
     health,
     organizations,
     policies,
+    providers,
     sandboxes,
     scim,
     users,
@@ -22,5 +23,6 @@ router.include_router(users.router)
 router.include_router(scim.router)
 router.include_router(sandboxes.router)
 router.include_router(policies.router)
+router.include_router(providers.router)
 router.include_router(audit.router)
 router.include_router(compliance.router)

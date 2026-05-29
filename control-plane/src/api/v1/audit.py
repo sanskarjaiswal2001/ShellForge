@@ -92,63 +92,112 @@ async def verify_chain(
     return HashChainVerification(valid=True, checked=len(events))
 
 
-# ─── Real-time stream (Server-Sent Events) ──────────────────────────────
+# ─── Real-time stream (Server-Sent Events via Postgres LISTEN/NOTIFY) ──
 
 
 @router.get("/stream")
 async def audit_stream(
     claims: IdentityClaims = Depends(get_current_identity),
-    require_viewer_check: IdentityClaims = Depends(require_viewer),
+    _: IdentityClaims = Depends(require_viewer),
 ) -> StreamingResponse:
-    """SSE stream of newly-arrived audit events for the requesting tenant.
+    """SSE stream of newly-arrived audit events via Postgres LISTEN/NOTIFY.
 
-    Strategy: poll the DB every ~2s for events newer than the last sent UID.
-    For higher throughput, swap this for LISTEN/NOTIFY on Postgres.
+    The migration 0007 trigger fires pg_notify('audit_events_<org_id>', ...)
+    on every INSERT. We open a raw asyncpg connection here (not SQLAlchemy —
+    asyncpg exposes LISTEN; SQLAlchemy does not), listen on the tenant channel,
+    and forward notifications directly to the SSE response.
+
+    On connect we also emit the last 10 events so the client has an initial
+    backlog, then switch to push mode.
     """
 
     async def event_gen():
-        last_seen: datetime | None = None
-        while True:
-            try:
-                async with tenant_scoped_session(claims.tenant_id) as session:
-                    stmt = select(AuditEventRecord).order_by(AuditEventRecord.occurred_at)
-                    if last_seen is not None:
-                        stmt = stmt.where(AuditEventRecord.occurred_at > last_seen)
-                    else:
-                        # On first iteration, return the 10 most recent in order.
-                        stmt = (
-                            select(AuditEventRecord)
-                            .order_by(desc(AuditEventRecord.occurred_at))
-                            .limit(10)
-                        )
+        import asyncpg
+        from src.config import get_settings
 
-                    result = await session.execute(stmt)
-                    events = list(result.scalars().all())
+        # Resolve the org UUID for the NOTIFY channel name.
+        org_id: str | None = None
+        try:
+            async with tenant_scoped_session(claims.tenant_id) as session:
+                from src.models.organization import Organization
+                from sqlalchemy import select
+                org = (
+                    await session.execute(
+                        select(Organization).where(Organization.slug == claims.tenant_id)
+                    )
+                ).scalar_one_or_none()
+                if org:
+                    org_id = str(org.id)
+        except Exception:  # noqa: BLE001
+            pass
 
-                    if last_seen is None:
-                        events = list(reversed(events))
+        # Emit initial backlog (10 most recent).
+        try:
+            async with tenant_scoped_session(claims.tenant_id) as session:
+                stmt = (
+                    select(AuditEventRecord)
+                    .order_by(desc(AuditEventRecord.occurred_at))
+                    .limit(10)
+                )
+                result = await session.execute(stmt)
+                for ev in reversed(result.scalars().all()):
+                    yield f"data: {_ev_json(ev)}\n\n"
+        except Exception as e:  # noqa: BLE001
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
 
-                    for ev in events:
-                        payload = {
-                            "id": str(ev.id),
-                            "occurred_at": ev.occurred_at.isoformat(),
-                            "actor_email": ev.actor_user_email,
-                            "actor_role": ev.actor_user_role,
-                            "action": ev.action,
-                            "outcome": ev.outcome,
-                            "resource_type": ev.resource_type,
-                            "resource_name": ev.resource_name,
-                            "event_hash": ev.event_hash,
-                            "prev_hash": ev.prev_hash,
-                            "class_uid": ev.class_uid,
-                            "source": ev.source,
-                        }
-                        yield f"data: {json.dumps(payload)}\n\n"
-                        last_seen = ev.occurred_at
-            except Exception as e:  # noqa: BLE001
-                yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+        if org_id is None:
+            # Can't listen without org UUID; fall back to keepalive.
+            while True:
+                yield ": keepalive\n\n"
+                await asyncio.sleep(30)
+            return
 
-            await asyncio.sleep(2)
+        # Open raw asyncpg connection for LISTEN.
+        channel = f"audit_events_{org_id}"
+        settings = get_settings()
+        # Convert async URL to sync-style for asyncpg.
+        dsn = (
+            settings.database_url
+            .replace("postgresql+asyncpg://", "postgresql://")
+        )
+        try:
+            conn = await asyncpg.connect(dsn)
+        except Exception as e:  # noqa: BLE001
+            yield f"event: error\ndata: {json.dumps({'error': f'DB connect: {e}'})}\n\n"
+            return
+
+        queue: asyncio.Queue[str] = asyncio.Queue()
+
+        def _on_notify(connection, pid, channel, payload):
+            queue.put_nowait(payload)
+
+        await conn.add_listener(channel, _on_notify)
+        try:
+            while True:
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    yield f"data: {payload}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            await conn.remove_listener(channel, _on_notify)
+            await conn.close()
+
+    def _ev_json(ev: AuditEventRecord) -> str:
+        return json.dumps({
+            "id": str(ev.id),
+            "occurred_at": ev.occurred_at.isoformat(),
+            "actor_email": ev.actor_user_email,
+            "actor_role": ev.actor_user_role,
+            "action": ev.action,
+            "outcome": ev.outcome,
+            "resource_type": ev.resource_type,
+            "resource_name": ev.resource_name,
+            "event_hash": ev.event_hash,
+            "prev_hash": ev.prev_hash,
+            "class_uid": ev.class_uid,
+            "source": ev.source,
+        })
 
     return StreamingResponse(
         event_gen(),
