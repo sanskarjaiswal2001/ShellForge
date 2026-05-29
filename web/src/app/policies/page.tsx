@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch, type PolicyVersionOut } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
-import { demoBearer, getActiveUser } from "@/lib/demo-auth";
+import { getBearer } from "@/lib/session";
 
 export default function PoliciesPage() {
   const { data: templates } = useApi<string[]>("/policies/templates");
@@ -17,21 +17,21 @@ export default function PoliciesPage() {
   const [yaml, setYaml] = useState<string>("");
 
   const loadTemplate = async (name: string) => {
-    const user = getActiveUser();
-    if (!user) return;
-    const res = await apiFetch<{ name: string; yaml: string }>(`/policies/templates/${name}`, { bearer: demoBearer(user) });
+    const bearer = getBearer();
+    if (!bearer) return;
+    const res = await apiFetch<{ name: string; yaml: string }>(`/policies/templates/${name}`, { bearer });
     setSelected(name);
     setYaml(res.yaml);
   };
 
   const adoptTemplate = async () => {
-    const user = getActiveUser();
-    if (!user || !selected) return;
+    const bearer = getBearer();
+    if (!bearer || !selected) return;
     await apiFetch("/policies", {
       method: "POST",
-      bearer: demoBearer(user),
+      bearer,
       body: JSON.stringify({
-        name: `${selected}-${user.tenant_id}`,
+        name: selected,
         template: selected,
       }),
     });

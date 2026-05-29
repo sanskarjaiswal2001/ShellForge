@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { apiFetch, type AuditEventOut } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
-import { demoBearer, getActiveUser } from "@/lib/demo-auth";
+import { getBearer } from "@/lib/session";
 
 export default function AuditPage() {
   const { data: events, loading } = useApi<AuditEventOut[]>("/audit/events?limit=100");
@@ -18,11 +18,11 @@ export default function AuditPage() {
   const verifyChain = async () => {
     setVerifying(true);
     try {
-      const user = getActiveUser();
-      if (!user) return;
+      const bearer = getBearer();
+      if (!bearer) return;
       const result = await apiFetch<{ valid: boolean; checked: number; broken_at: string | null }>(
         "/audit/chain/verify",
-        { bearer: demoBearer(user) },
+        { bearer },
       );
       setChain(result);
     } finally {

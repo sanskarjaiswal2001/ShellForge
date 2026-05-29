@@ -6,7 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { demoBearer, getActiveUser } from "@/lib/demo-auth";
+import { getBearer } from "@/lib/session";
 
 interface ControlInfo {
   id: string;
@@ -204,11 +204,11 @@ export default function CompliancePage() {
     setError(null);
     setGenerating(true);
     try {
-      const user = getActiveUser();
-      if (!user) return;
+      const bearer = getBearer();
+      if (!bearer) return;
       const url = `/api/proxy/compliance/generate?framework=${framework}&hours=${hours}`;
       const resp = await fetch(url, {
-        headers: { Authorization: `Bearer ${demoBearer(user)}` },
+        headers: { Authorization: `Bearer ${bearer}` },
       });
       if (!resp.ok) {
         let detail = resp.statusText;

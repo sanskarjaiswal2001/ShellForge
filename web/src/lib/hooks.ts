@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { demoBearer, getActiveUser } from "@/lib/demo-auth";
+import { getBearer } from "@/lib/session";
 
 export function useApi<T>(path: string, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
@@ -13,9 +13,9 @@ export function useApi<T>(path: string, deps: unknown[] = []) {
     setLoading(true);
     setError(null);
     try {
-      const user = getActiveUser();
-      if (!user) throw new Error("Not authenticated");
-      const result = await apiFetch<T>(path, { bearer: demoBearer(user) });
+      const bearer = getBearer();
+      if (!bearer) throw new Error("Not authenticated");
+      const result = await apiFetch<T>(path, { bearer });
       setData(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -37,34 +37,33 @@ export function useAuditStream() {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const user = getActiveUser();
-    if (!user) return;
+    const bearer = getBearer();
+    if (!bearer) return;
 
-    // EventSource doesn't support custom headers; pass bearer as query param.
-    // The control plane SSE endpoint accepts ?token=<bearer> as fallback.
-    // (In real prod, use a stable session cookie.)
-    const bearer = demoBearer(user);
-    const url = `/api/proxy/audit/stream?token=${encodeURIComponent(bearer)}`;
-
-    // Fall back to polling — EventSource auth is finicky.
     let alive = true;
     let lastSeen: string | null = null;
 
+    // Poll the REST endpoint for now; the backend delivers events via
+    // Postgres LISTEN/NOTIFY internally. A future iteration should open a
+    // real SSE EventSource once we have a session-cookie-based auth path
+    // (EventSource doesn't support custom headers).
     const poll = async () => {
       while (alive) {
         try {
           const result = await apiFetch<any[]>("/audit/events?limit=50", { bearer });
           if (lastSeen === null) {
-            // initial load
             setEvents(result);
           } else {
-            const newer = result.filter((e) => e.occurred_at > lastSeen!);
+            const newer = result.filter((e: any) => e.occurred_at > lastSeen!);
             if (newer.length > 0) {
               setEvents((prev) => [...newer, ...prev].slice(0, 100));
             }
           }
           if (result.length > 0) {
-            const max = result.reduce((m, e) => (e.occurred_at > m ? e.occurred_at : m), "");
+            const max = result.reduce(
+              (m: string, e: any) => (e.occurred_at > m ? e.occurred_at : m),
+              ""
+            );
             lastSeen = max;
           }
           setConnected(true);
@@ -75,7 +74,9 @@ export function useAuditStream() {
       }
     };
     void poll();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   return { events, connected };

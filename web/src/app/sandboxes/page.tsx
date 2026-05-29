@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch, ApiError, type SandboxOut } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
-import { demoBearer, getActiveUser } from "@/lib/demo-auth";
+import { getBearer } from "@/lib/session";
 import { ProvisioningTimeline } from "@/components/provisioning-timeline";
 import { ConnectionModal } from "@/components/connection-modal";
 
@@ -38,15 +38,15 @@ export default function SandboxesPage() {
     setCreating(true);
     setCreateError(null);
     try {
-      const user = getActiveUser();
-      if (!user) return;
+      const bearer = getBearer();
+      if (!bearer) return;
       const result = await apiFetch<SandboxOut>("/sandboxes", {
         method: "POST",
-        bearer: demoBearer(user),
+        bearer,
         body: JSON.stringify(form),
       });
       setShowCreate(false);
-      setForm({ name: "", agent: "claude", policy_template: user.policy_template || "baseline" });
+      setForm({ name: "", agent: "claude", policy_template: "baseline" });
       setProvisioning(result);
       await refresh();
     } catch (e) {
@@ -58,11 +58,11 @@ export default function SandboxesPage() {
   };
 
   const triggerViolation = async (sb: SandboxOut) => {
-    const user = getActiveUser();
-    if (!user) return;
+    const bearer = getBearer();
+    if (!bearer) return;
     await apiFetch(`/sandboxes/${sb.id}/simulate-violation`, {
       method: "POST",
-      bearer: demoBearer(user),
+      bearer,
       body: JSON.stringify({ destination: "evil-exfil.io" }),
     });
     setTimeout(() => refresh(), 500);
@@ -70,9 +70,9 @@ export default function SandboxesPage() {
 
   const removeSandbox = async (sb: SandboxOut) => {
     if (!confirm(`Delete sandbox "${sb.name}"?`)) return;
-    const user = getActiveUser();
-    if (!user) return;
-    await apiFetch(`/sandboxes/${sb.id}`, { method: "DELETE", bearer: demoBearer(user) });
+    const bearer = getBearer();
+    if (!bearer) return;
+    await apiFetch(`/sandboxes/${sb.id}`, { method: "DELETE", bearer });
     await refresh();
   };
 

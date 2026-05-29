@@ -5,7 +5,7 @@ import { X, Terminal, Copy, Info, AlertTriangle, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch, type SandboxOut } from "@/lib/api";
-import { demoBearer, getActiveUser } from "@/lib/demo-auth";
+import { getBearer } from "@/lib/session";
 
 interface ConnectionInfo {
   backend: string;
@@ -28,9 +28,9 @@ export function ConnectionModal({ sandbox, onClose }: Props) {
   const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
-    const user = getActiveUser();
-    if (!user) return;
-    apiFetch<ConnectionInfo>(`/sandboxes/${sandbox.id}/connection`, { bearer: demoBearer(user) })
+    const bearer = getBearer();
+    if (!bearer) return;
+    apiFetch<ConnectionInfo>(`/sandboxes/${sandbox.id}/connection`, { bearer })
       .then(setInfo)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [sandbox.id]);

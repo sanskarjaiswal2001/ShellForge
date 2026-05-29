@@ -29,10 +29,8 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 
-# Generated gRPC stubs (regenerated via make proto-gen)
-control-plane/src/openshell/proto/*_pb2.py
-control-plane/src/openshell/proto/*_pb2_grpc.py
-control-plane/src/openshell/proto/*_pb2.pyi
+# Generated gRPC stubs — committed so the repo builds without proto-gen.
+# Regenerate: make vendor-protos && make proto-gen
 
 # Vendored OpenShell protos (re-pull via make vendor-protos)
 vendor/

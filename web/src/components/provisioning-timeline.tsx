@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Check, Loader2, Circle } from "lucide-react";
 import { apiFetch } from "@/lib/api";
-import { demoBearer, getActiveUser } from "@/lib/demo-auth";
+import { getBearer } from "@/lib/session";
 import { cn } from "@/lib/cn";
 
 interface TimelineEntry {
@@ -25,8 +25,8 @@ export function ProvisioningTimeline({ sandboxId, active, onComplete }: Props) {
 
   useEffect(() => {
     if (!active) return;
-    const user = getActiveUser();
-    if (!user) return;
+    const bearer = getBearer();
+    if (!bearer) return;
 
     let stopped = false;
     let lastStatus: string | null = null;
@@ -36,7 +36,7 @@ export function ProvisioningTimeline({ sandboxId, active, onComplete }: Props) {
         try {
           const result = await apiFetch<TimelineEntry[]>(
             `/sandboxes/${sandboxId}/timeline`,
-            { bearer: demoBearer(user) }
+            { bearer }
           );
           setEntries(result);
           const lastEntry = result[result.length - 1];
