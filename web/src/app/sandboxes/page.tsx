@@ -1,14 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Box, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, Box, Trash2, AlertTriangle, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { apiFetch, type SandboxOut } from "@/lib/api";
+import { apiFetch, ApiError, type SandboxOut } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { demoBearer, getActiveUser } from "@/lib/demo-auth";
+import { ProvisioningTimeline } from "@/components/provisioning-timeline";
 
 const POLICY_TEMPLATES = [
   { id: "baseline", label: "Baseline" },
@@ -22,7 +23,9 @@ const AGENTS = ["claude", "opencode", "codex", "copilot"];
 export default function SandboxesPage() {
   const { data: sandboxes, loading, error, refresh } = useApi<SandboxOut[]>("/sandboxes");
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [provisioning, setProvisioning] = useState<SandboxOut | null>(null);
   const [form, setForm] = useState({
     name: "",
     agent: "claude",
@@ -31,19 +34,22 @@ export default function SandboxesPage() {
 
   const submit = async () => {
     setCreating(true);
+    setCreateError(null);
     try {
       const user = getActiveUser();
       if (!user) return;
-      await apiFetch("/sandboxes", {
+      const result = await apiFetch<SandboxOut>("/sandboxes", {
         method: "POST",
         bearer: demoBearer(user),
         body: JSON.stringify(form),
       });
       setShowCreate(false);
       setForm({ name: "", agent: "claude", policy_template: user.policy_template || "baseline" });
+      setProvisioning(result);
       await refresh();
     } catch (e) {
-      alert(`Failed: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = e instanceof ApiError ? `[${e.status}] ${e.message}` : e instanceof Error ? e.message : String(e);
+      setCreateError(msg);
     } finally {
       setCreating(false);
     }
@@ -75,7 +81,7 @@ export default function SandboxesPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Sandboxes</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Tenant-scoped agent runtimes. Policy enforced at network layer.
+              Tenant-scoped agent runtimes. Policy enforced at the network layer.
             </p>
           </div>
           <Button onClick={() => setShowCreate((v) => !v)}>
@@ -97,6 +103,9 @@ export default function SandboxesPage() {
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="my-sandbox-1"
                 />
+                <div className="text-[10px] text-muted-foreground mt-1">
+                  lowercase, alphanumeric + hyphens
+                </div>
               </div>
               <div>
                 <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Agent</label>
@@ -118,12 +127,42 @@ export default function SandboxesPage() {
                   {POLICY_TEMPLATES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
                 </select>
               </div>
+              {createError && (
+                <div className="md:col-span-3 text-xs text-destructive bg-destructive/10 px-3 py-2 rounded border border-destructive/30">
+                  {createError}
+                </div>
+              )}
               <div className="md:col-span-3 flex gap-2 justify-end">
-                <Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
+                <Button variant="ghost" onClick={() => { setShowCreate(false); setCreateError(null); }}>Cancel</Button>
                 <Button onClick={submit} disabled={!form.name || creating}>
                   {creating ? "Provisioning..." : "Provision"}
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Live provisioning panel */}
+        {provisioning && (
+          <Card className="mb-6 border-blue-500/40">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                Provisioning <span className="font-mono">{provisioning.name}</span>
+              </CardTitle>
+              <Button variant="ghost" size="icon" onClick={() => setProvisioning(null)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <ProvisioningTimeline
+                sandboxId={provisioning.id}
+                active={true}
+                onComplete={() => {
+                  void refresh();
+                  setTimeout(() => setProvisioning(null), 1200);
+                }}
+              />
             </CardContent>
           </Card>
         )}
@@ -138,7 +177,13 @@ export default function SandboxesPage() {
         {sandboxes && sandboxes.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {sandboxes.map((sb) => (
-              <SandboxCard key={sb.id} sb={sb} onViolation={() => triggerViolation(sb)} onDelete={() => removeSandbox(sb)} />
+              <SandboxCard
+                key={sb.id}
+                sb={sb}
+                onViolation={() => triggerViolation(sb)}
+                onDelete={() => removeSandbox(sb)}
+                onShowProvisioning={() => setProvisioning(sb)}
+              />
             ))}
           </div>
         )}
@@ -151,10 +196,12 @@ function SandboxCard({
   sb,
   onViolation,
   onDelete,
+  onShowProvisioning,
 }: {
   sb: SandboxOut;
   onViolation: () => void;
   onDelete: () => void;
+  onShowProvisioning: () => void;
 }) {
   const phaseColor =
     sb.phase === "READY" ? "success" :
@@ -171,7 +218,14 @@ function SandboxCard({
             </CardTitle>
             <div className="text-xs text-muted-foreground mt-1 font-mono">{sb.compute_uid.slice(0, 12)}…</div>
           </div>
-          <Badge variant={phaseColor as any}>{sb.phase}</Badge>
+          <button onClick={sb.phase === "PROVISIONING" ? onShowProvisioning : undefined}>
+            <Badge variant={phaseColor as "success" | "destructive" | "secondary"}>
+              {sb.phase === "PROVISIONING" && (
+                <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse mr-1 inline-block" />
+              )}
+              {sb.phase}
+            </Badge>
+          </button>
         </div>
       </CardHeader>
       <CardContent className="pt-0 space-y-3">

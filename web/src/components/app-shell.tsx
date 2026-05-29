@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Shield, Box, FileText, Activity, FileSignature, LogOut, ChevronDown } from "lucide-react";
+import { Shield, Box, FileText, Activity, FileSignature, LogOut, ChevronDown, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { clearActiveUser, DEMO_USERS, getActiveUser, setActiveUser, type DemoUser } from "@/lib/demo-auth";
@@ -22,6 +22,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [user, setUser] = useState<DemoUser | null>(null);
   const [tenantMenuOpen, setTenantMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
     const u = getActiveUser();
@@ -30,7 +31,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
     setUser(u);
+    const stored = (localStorage.getItem("shellforge.theme") as "dark" | "light" | null) ?? "dark";
+    setTheme(stored);
+    document.documentElement.classList.toggle("light", stored === "light");
   }, [router]);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    localStorage.setItem("shellforge.theme", next);
+    document.documentElement.classList.toggle("light", next === "light");
+  };
 
   if (!user) return null;
 
@@ -47,6 +58,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Badge variant="outline" className="text-[10px]">Control Plane</Badge>
           </div>
         </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleTheme}
+            className="w-8 h-8 rounded-md hover:bg-secondary flex items-center justify-center"
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          >
+            {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
 
         {/* Tenant switcher */}
         <div className="relative">
@@ -104,6 +124,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           )}
+        </div>
         </div>
       </header>
 

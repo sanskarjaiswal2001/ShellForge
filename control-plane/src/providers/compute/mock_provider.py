@@ -45,6 +45,8 @@ class _MockSandbox:
     status_detail: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     log_lines: list[dict] = field(default_factory=list)
+    # Persistent timeline of provisioning steps for UI consumption.
+    timeline: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -190,14 +192,28 @@ class MockComputeProvider(ComputeProvider):
 
     # ─── Internal ──────────────────────────────────────────────────────
 
+    # Provisioning stages — visible in UI timeline.
+    _STAGES = [
+        ("requesting_sandbox", "Requesting sandbox slot from gateway", 0.6),
+        ("resolving_policy", "Compiling policy YAML → OPA bundle", 0.5),
+        ("attaching_providers", "Resolving tenant-scoped credentials", 0.5),
+        ("pulling_image", "Pulling agent runtime image (claude)", 0.9),
+        ("creating_namespace", "Setting up Landlock + network namespace + seccomp", 0.7),
+        ("starting_supervisor", "Starting supervisor and policy proxy", 0.5),
+        ("agent_handshake", "Agent handshake + JWT issued", 0.3),
+    ]
+
     async def _simulate_provisioning(self, name: str) -> None:
-        # Realistic lifecycle: PROVISIONING (2s) → READY.
-        await self._broadcast_event(name, SandboxPhase.PROVISIONING, "Requesting sandbox...")
-        await asyncio.sleep(0.5)
-        await self._broadcast_event(name, SandboxPhase.PROVISIONING, "Pulling image...")
-        await asyncio.sleep(0.8)
-        await self._broadcast_event(name, SandboxPhase.PROVISIONING, "Starting sandbox...")
-        await asyncio.sleep(0.5)
+        async with self._lock:
+            sandbox = self._sandboxes.get(name)
+            if sandbox is None:
+                return
+
+        for stage_key, stage_msg, dur in self._STAGES:
+            await self._record_stage(name, stage_key, stage_msg, "in_progress")
+            await self._broadcast_event(name, SandboxPhase.PROVISIONING, stage_msg)
+            await asyncio.sleep(dur)
+            await self._record_stage(name, stage_key, stage_msg, "done")
 
         async with self._lock:
             sandbox = self._sandboxes.get(name)
@@ -205,7 +221,36 @@ class MockComputeProvider(ComputeProvider):
                 return
             sandbox.phase = SandboxPhase.READY
 
+        await self._record_stage(name, "ready", "Sandbox ready", "done")
         await self._broadcast_event(name, SandboxPhase.READY, "Sandbox ready")
+
+    async def _record_stage(
+        self, name: str, key: str, message: str, status: str
+    ) -> None:
+        async with self._lock:
+            sandbox = self._sandboxes.get(name)
+            if sandbox is None:
+                return
+            for entry in sandbox.timeline:
+                if entry["key"] == key:
+                    entry["status"] = status
+                    entry["updated_at"] = datetime.now(UTC).isoformat()
+                    return
+            sandbox.timeline.append({
+                "key": key,
+                "message": message,
+                "status": status,
+                "started_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
+            })
+
+    async def get_timeline(self, tenant_id: str, name: str) -> list[dict]:
+        """Read-only helper for the API to surface provisioning progress."""
+        async with self._lock:
+            sandbox = self._sandboxes.get(name)
+            if sandbox is None or sandbox.tenant_id != tenant_id:
+                return []
+            return list(sandbox.timeline)
 
     async def _broadcast_event(self, name: str, phase: SandboxPhase, message: str) -> None:
         event = SandboxEvent(

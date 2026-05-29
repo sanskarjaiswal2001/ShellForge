@@ -164,14 +164,57 @@ async def create_sandbox(
 @router.get("/{sandbox_id}", response_model=SandboxOut)
 async def get_sandbox(
     sandbox_id: UUID,
-    _: IdentityClaims = Depends(require_viewer),
+    claims: IdentityClaims = Depends(require_viewer),
     session: AsyncSession = Depends(get_tenant_session),
+    compute: ComputeProvider = Depends(compute_provider),
 ) -> SandboxOut:
     result = await session.execute(select(Sandbox).where(Sandbox.id == sandbox_id))
     sandbox = result.scalar_one_or_none()
     if sandbox is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sandbox not found")
+
+    # Sync phase from compute backend (mock auto-progresses; openshell reflects gateway).
+    try:
+        ref = await compute.get_sandbox(claims.tenant_id, sandbox.name)
+        if ref.phase.value != sandbox.phase:
+            sandbox.phase = ref.phase.value
+            sandbox.last_phase_at = datetime.now(UTC)
+            await session.flush()
+    except Exception:  # noqa: BLE001
+        pass  # leave DB-cached phase
+
     return SandboxOut.model_validate(sandbox)
+
+
+class TimelineEntry(BaseModel):
+    key: str
+    message: str
+    status: str  # "in_progress" | "done" | "failed"
+    started_at: str
+    updated_at: str
+
+
+@router.get("/{sandbox_id}/timeline", response_model=list[TimelineEntry])
+async def get_sandbox_timeline(
+    sandbox_id: UUID,
+    claims: IdentityClaims = Depends(require_viewer),
+    session: AsyncSession = Depends(get_tenant_session),
+    compute: ComputeProvider = Depends(compute_provider),
+) -> list[TimelineEntry]:
+    """Per-stage provisioning timeline. Mock backend produces 7 stages;
+    OpenShell backend will use real WatchSandbox events when wired."""
+    result = await session.execute(select(Sandbox).where(Sandbox.id == sandbox_id))
+    sandbox = result.scalar_one_or_none()
+    if sandbox is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sandbox not found")
+
+    if hasattr(compute, "get_timeline"):
+        try:
+            entries = await compute.get_timeline(claims.tenant_id, sandbox.name)
+            return [TimelineEntry(**e) for e in entries]
+        except Exception:  # noqa: BLE001
+            return []
+    return []
 
 
 @router.delete("/{sandbox_id}", status_code=status.HTTP_204_NO_CONTENT)

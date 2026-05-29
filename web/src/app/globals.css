@@ -4,6 +4,25 @@
 
 @layer base {
   :root {
+    /* Dark mode default — enterprise SOC aesthetic. Toggle via .light on <html>. */
+    --background: 222 47% 6%;
+    --foreground: 210 40% 96%;
+    --card: 222 47% 9%;
+    --card-foreground: 210 40% 96%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 6%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 33% 14%;
+    --muted-foreground: 215 20% 65%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 96%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 217 91% 60%;
+  }
+
+  html.light {
     --background: 0 0% 100%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
@@ -20,24 +39,28 @@
     --input: 214 32% 91%;
     --ring: 221 83% 53%;
   }
+
   * { @apply border-border; }
   body { @apply bg-background text-foreground; font-feature-settings: "rlig" 1, "calt" 1; }
 }
 
-/* Hash chain block styling */
 .hash-chip {
   @apply inline-flex items-center gap-1 font-mono text-[10px] text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded border border-border;
 }
 
-/* Live audit row animation */
 .audit-row { @apply animate-fade-in; }
 
-/* Tenant chip */
 .tenant-chip {
-  @apply inline-flex items-center gap-2 rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-medium;
+  @apply inline-flex items-center gap-2 rounded-full bg-primary/15 text-primary px-3 py-1 text-xs font-medium;
 }
 
-/* Violation badge */
 .violation-badge {
-  @apply inline-flex items-center gap-1 rounded bg-destructive/10 text-destructive px-2 py-0.5 text-xs font-semibold border border-destructive/30;
+  @apply inline-flex items-center gap-1 rounded bg-destructive/15 text-destructive px-2 py-0.5 text-xs font-semibold border border-destructive/30;
+}
+
+.bg-grid {
+  background-image:
+    linear-gradient(to right, hsl(var(--border) / 0.5) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--border) / 0.5) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
