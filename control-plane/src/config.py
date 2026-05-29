@@ -36,7 +36,10 @@ class Settings(BaseSettings):
     control_plane_port: int = 8000
 
     # ── Database ────────────────────────────────────────────────────────
-    database_url: str = "postgresql+asyncpg://shellforge:shellforge@localhost:5432/shellforge"
+    # Runtime: non-superuser app role so RLS is enforced.
+    # Alembic: bootstrap superuser, used only by migrations.
+    database_url: str = "postgresql+asyncpg://shellforge_app:shellforge_app@localhost:5432/shellforge"
+    alembic_database_url: str = "postgresql+asyncpg://shellforge:shellforge@localhost:5432/shellforge"
     database_pool_size: int = 20
     database_max_overflow: int = 10
 

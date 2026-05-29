@@ -70,3 +70,4 @@ postgres-data/
 infisical-data/
 loki-data/
 grafana-data/
+.env.bak

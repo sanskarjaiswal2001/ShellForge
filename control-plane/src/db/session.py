@@ -60,7 +60,11 @@ async def tenant_scoped_session(tenant_id: str | None) -> AsyncIterator[AsyncSes
     async with session_factory()() as session:
         async with session.begin():
             if tenant_id is not None:
+                # set_config(name, value, is_local) — parameterizable equivalent
+                # of `SET LOCAL`. Required because Postgres does not accept
+                # bind parameters in plain SET statements.
                 await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tid").bindparams(tid=tenant_id)
+                    text("SELECT set_config('app.current_tenant_id', :tid, true)")
+                    .bindparams(tid=tenant_id)
                 )
             yield session

@@ -76,7 +76,8 @@ async def my_organization(
     async with session_factory()() as session:
         from sqlalchemy import text
         await session.execute(
-            text("SET LOCAL app.current_tenant_id = :t").bindparams(t=claims.tenant_id)
+            text("SELECT set_config('app.current_tenant_id', :t, true)")
+            .bindparams(t=claims.tenant_id)
         )
         result = await session.execute(
             select(Organization).where(Organization.slug == claims.tenant_id)

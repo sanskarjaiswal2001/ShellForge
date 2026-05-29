@@ -73,9 +73,6 @@ services:
     image: infisical/infisical:v0.97.0-postgres
     container_name: shellforge-infisical
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
       ENCRYPTION_KEY: "6c1fe4e407b8911c104518103505b218"
       AUTH_SECRET: "5lrMXKKWCVocS/uerPsl7V+TX/aaUaI7iDelBePyyzgMI="
@@ -154,6 +151,11 @@ services:
   # OpenShell Gateway — sandbox runtime. [SWAP] target: ComputeProvider
   # protocol allows replacing OpenShell with direct Docker / k8s if needed.
   # Pinned commit: 6c7950da900921a24aa65e79c7b522ba12fd7875 (2026-05-27)
+  #
+  # Gated behind the `openshell` profile because:
+  #   1. The image is alpha and may fail to pull cleanly.
+  #   2. Demo path uses COMPUTE_BACKEND=mock (no OpenShell needed).
+  # Enable with: docker compose --profile openshell up -d   (or podman equivalent)
   # ─────────────────────────────────────────────────────────────────────────
   openshell-gateway:
     image: ghcr.io/nvidia/openshell:main
@@ -166,13 +168,12 @@ services:
       OPENSHELL_COMPUTE_DRIVER: "docker"
     ports:
       - "50051:50051"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - shellforge
+    profiles: ["openshell"]                # opt-in; demo path doesn't need this
 
   # ─────────────────────────────────────────────────────────────────────────
   # ShellForge Control Plane (Python / FastAPI)

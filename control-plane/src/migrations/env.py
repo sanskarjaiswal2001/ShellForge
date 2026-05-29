@@ -20,8 +20,11 @@ if config.config_file_name is not None:
 
 
 def _sync_url() -> str:
-    """Alembic uses sync driver for offline; we still use asyncpg via async wrapper."""
-    return get_settings().database_url
+    """Migrations connect as the bootstrap superuser (`shellforge`) so they
+    can ALTER ROLE / CREATE ROLE / GRANT. Runtime connects as `shellforge_app`
+    (non-superuser) so RLS is enforced. See migration 0005."""
+    s = get_settings()
+    return s.alembic_database_url or s.database_url
 
 
 target_metadata = Base.metadata

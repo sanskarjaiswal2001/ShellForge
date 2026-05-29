@@ -7,6 +7,7 @@ on commits that touch state without calling the emitter.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -67,7 +68,7 @@ class AuditEmitter:
         )
         # Compute hash on the in-progress event (event_hash excluded by canonical_json).
         event_hash = compute_event_hash(event)
-        event = AuditEvent(**{**event.__dict__, "event_hash": event_hash})
+        event = replace(event, event_hash=event_hash)
 
         # Persist
         record = AuditEventRecord(

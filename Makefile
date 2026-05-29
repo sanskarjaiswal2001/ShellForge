@@ -1,3 +1,17 @@
+# Container runtime auto-detect.
+#
+# Priority: Podman (work-machine default, no license cost)
+#        -> docker compose plugin
+#        -> docker-compose v1 standalone
+COMPOSE := $(shell \
+    if command -v podman >/dev/null 2>&1; then \
+        echo "podman compose"; \
+    elif docker compose version >/dev/null 2>&1; then \
+        echo "docker compose"; \
+    else \
+        echo "docker-compose"; \
+    fi)
+
 .DEFAULT_GOAL := help
 .PHONY: help up down restart logs ps clean \
         demo seed reset-data \
@@ -18,7 +32,7 @@ help: ## Show this help
 # Docker stack
 
 up: ## Start the full local stack (Postgres, Dex, Infisical, OTel, Loki, Grafana, OpenShell)
-	docker compose -f deploy/docker-compose.yml up -d
+	$(COMPOSE) -f deploy/docker-compose.yml up -d
 	@echo ""
 	@echo "Stack up. URLs:"
 	@echo "  Dashboard:   http://localhost:3000"
@@ -29,18 +43,18 @@ up: ## Start the full local stack (Postgres, Dex, Infisical, OTel, Loki, Grafana
 	@echo "  OpenShell:   grpc://localhost:50051"
 
 down: ## Stop the stack
-	docker compose -f deploy/docker-compose.yml down
+	$(COMPOSE) -f deploy/docker-compose.yml down
 
 restart: down up ## Restart the stack
 
 logs: ## Tail stack logs
-	docker compose -f deploy/docker-compose.yml logs -f --tail=100
+	$(COMPOSE) -f deploy/docker-compose.yml logs -f --tail=100
 
 ps: ## Show running services
-	docker compose -f deploy/docker-compose.yml ps
+	$(COMPOSE) -f deploy/docker-compose.yml ps
 
 clean: ## Stop stack and remove volumes (destroys all data)
-	docker compose -f deploy/docker-compose.yml down -v
+	$(COMPOSE) -f deploy/docker-compose.yml down -v
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Demo / seed
