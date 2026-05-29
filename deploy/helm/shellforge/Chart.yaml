@@ -1,0 +1,17 @@
+apiVersion: v2
+name: shellforge
+description: Enterprise control plane for NVIDIA OpenShell — multi-tenant, SSO, audit, compliance
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - shellforge
+  - openshell
+  - ai-agents
+  - multi-tenant
+  - compliance
+  - sso
+home: https://github.com/sanskarjaiswal2001/ShellForge
+maintainers:
+  - name: Sanskar Jaiswal
+    url: https://github.com/sanskarjaiswal2001

@@ -23,6 +23,7 @@ from src.db.session import session_factory
 from src.interfaces.audit_sink import AuditActor, AuditEvent, AuditResource
 from src.models.audit_event import AuditEventRecord
 from src.models.organization import Organization
+from src.models.sandbox import Sandbox
 from src.models.user import User
 
 
@@ -90,8 +91,42 @@ async def _switch_to_admin(session: AsyncSession) -> None:
 
 async def _wipe(session: AsyncSession) -> None:
     await _switch_to_admin(session)
-    await session.execute(text("TRUNCATE audit_events, users, organizations CASCADE"))
+    await session.execute(
+        text("TRUNCATE audit_events, sandboxes, policy_versions, users, organizations CASCADE")
+    )
     log.info("seed.wiped")
+
+
+async def _seed_sandboxes(session: AsyncSession, orgs: dict[str, Organization]) -> None:
+    """Pre-provision one sandbox per tenant for a populated dashboard
+    on first load."""
+    from uuid import uuid4
+    await _switch_to_admin(session)
+
+    for org_slug, org in orgs.items():
+        users = await _list_users_for_org(session, org.id)
+        if not users:
+            continue
+        admin = users[0]
+        sandbox = Sandbox(
+            organization_id=org.id,
+            created_by_user_id=admin.id,
+            name=f"demo-sandbox-{org_slug}",
+            compute_uid=str(uuid4()),
+            agent="claude",
+            policy_template=org.default_policy_template or "baseline",
+            phase="READY",
+            last_phase_at=datetime.now(UTC) - timedelta(hours=22),
+            labels={
+                "shellforge.io/tenant": org_slug,
+                "shellforge.io/user": admin.oidc_subject,
+                "shellforge.io/agent": "claude",
+                "shellforge.io/policy_template": org.default_policy_template or "baseline",
+            },
+        )
+        session.add(sandbox)
+    await session.flush()
+    log.info("seed.sandboxes", count=len(orgs))
 
 
 async def _seed_orgs_and_users(session: AsyncSession) -> dict[str, Organization]:
@@ -214,6 +249,7 @@ async def _run(force: bool) -> None:
             if force:
                 await _wipe(session)
             orgs = await _seed_orgs_and_users(session)
+            await _seed_sandboxes(session, orgs)
             await _seed_audit_events(session, orgs)
 
     log.info("seed.done", orgs=len(DEMO_ORGS))

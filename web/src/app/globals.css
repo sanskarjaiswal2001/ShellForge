@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+  }
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; font-feature-settings: "rlig" 1, "calt" 1; }
+}
+
+/* Hash chain block styling */
+.hash-chip {
+  @apply inline-flex items-center gap-1 font-mono text-[10px] text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded border border-border;
+}
+
+/* Live audit row animation */
+.audit-row { @apply animate-fade-in; }
+
+/* Tenant chip */
+.tenant-chip {
+  @apply inline-flex items-center gap-2 rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-medium;
+}
+
+/* Violation badge */
+.violation-badge {
+  @apply inline-flex items-center gap-1 rounded bg-destructive/10 text-destructive px-2 py-0.5 text-xs font-semibold border border-destructive/30;
+}

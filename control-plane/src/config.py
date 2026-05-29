@@ -15,7 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SecretBackend = Literal["infisical", "vault", "aws", "env"]
 AuditBackend = Literal["otel", "stdout"]
-ComputeBackend = Literal["openshell", "docker", "k8s"]
+ComputeBackend = Literal["openshell", "mock", "docker", "k8s"]
 PdfBackend = Literal["weasyprint", "puppeteer"]
 IdentityBackend = Literal["oidc"]
 
@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     audit_genesis_hash: str = "0" * 64
 
     # ── Compute provider (OpenShell) ────────────────────────────────────
-    compute_backend: ComputeBackend = "openshell"
+    compute_backend: ComputeBackend = "mock"
     openshell_gateway_endpoint: str = "localhost:50051"
     openshell_auth_mode: Literal["mtls", "oidc", "plaintext"] = "plaintext"
     openshell_mtls_ca_cert: str = ""

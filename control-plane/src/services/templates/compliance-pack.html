@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ pack.framework_title }} — {{ pack.organization_name }}</title>
+<style>
+  @page { size: letter; margin: 0.75in; }
+  body { font-family: "Helvetica", "Arial", sans-serif; color: #111; font-size: 11pt; line-height: 1.45; }
+  h1 { font-size: 26pt; margin: 0 0 4pt; color: #0f172a; }
+  h2 { font-size: 14pt; margin-top: 24pt; border-bottom: 1pt solid #cbd5e1; padding-bottom: 4pt; color: #1e293b; }
+  h3 { font-size: 12pt; margin-top: 16pt; color: #2563eb; }
+  .meta { color: #475569; font-size: 10pt; }
+  .stats { display: flex; gap: 20pt; margin: 12pt 0 18pt; }
+  .stat { background: #f1f5f9; padding: 10pt 14pt; border-left: 3pt solid #2563eb; }
+  .stat .num { font-size: 22pt; font-weight: 600; color: #0f172a; }
+  .stat .label { font-size: 9pt; text-transform: uppercase; letter-spacing: 0.5pt; color: #64748b; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8pt; font-size: 9.5pt; }
+  th, td { text-align: left; padding: 5pt 6pt; border-bottom: 0.5pt solid #e2e8f0; vertical-align: top; }
+  th { background: #f8fafc; font-weight: 600; color: #334155; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.3pt; }
+  .outcome-SUCCESS { color: #16a34a; font-weight: 600; }
+  .outcome-BLOCKED { color: #dc2626; font-weight: 600; }
+  .outcome-FAILURE { color: #ea580c; font-weight: 600; }
+  .hash { font-family: "Menlo", monospace; font-size: 8pt; color: #64748b; }
+  .footer { margin-top: 24pt; padding-top: 8pt; border-top: 0.5pt solid #cbd5e1; font-size: 9pt; color: #64748b; }
+  .control { background: #f8fafc; padding: 8pt 12pt; margin-top: 12pt; border-radius: 3pt; }
+  .control-id { font-weight: 700; color: #0f172a; }
+  .control-desc { color: #475569; margin: 4pt 0 8pt; font-style: italic; }
+</style>
+</head>
+<body>
+
+<h1>{{ pack.framework_title }}</h1>
+<div class="meta">
+  Evidence Pack &middot; <strong>{{ pack.organization_name }}</strong> ({{ pack.organization_slug }})<br>
+  Period: {{ pack.period_start.strftime("%Y-%m-%d %H:%M UTC") }} → {{ pack.period_end.strftime("%Y-%m-%d %H:%M UTC") }}<br>
+  Generated: {{ pack.generated_at.strftime("%Y-%m-%d %H:%M UTC") }} by ShellForge
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="num">{{ pack.total_events }}</div>
+    <div class="label">Audit events in period</div>
+  </div>
+  <div class="stat">
+    <div class="num">{{ pack.blocked_events }}</div>
+    <div class="label">Policy violations blocked</div>
+  </div>
+  <div class="stat">
+    <div class="num">{{ pack.evidence_by_control|length }}</div>
+    <div class="label">Controls evidenced</div>
+  </div>
+</div>
+
+<h2>Control evidence</h2>
+
+{% if pack.evidence_by_control %}
+  {% for control_id, evidence in pack.evidence_by_control.items() %}
+    <div class="control">
+      <h3 class="control-id">{{ control_id }}</h3>
+      <div class="control-desc">{{ evidence.control_description }}</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Actor</th>
+            <th>Action</th>
+            <th>Resource</th>
+            <th>Outcome</th>
+            <th>Event hash</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ev in evidence.matched_events %}
+          <tr>
+            <td>{{ ev.occurred_at }}</td>
+            <td>{{ ev.actor_email }}</td>
+            <td>{{ ev.action }}</td>
+            <td>{{ ev.resource_name }}</td>
+            <td class="outcome-{{ ev.outcome }}">{{ ev.outcome }}</td>
+            <td class="hash">{{ ev.event_hash[:16] }}…</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+{% else %}
+  <p><em>No events in this period mapped to {{ pack.framework_title }} controls. This is not necessarily an issue — confirm the period is correct and check that audit emission is active.</em></p>
+{% endif %}
+
+<div class="footer">
+  Tamper detection: every event row includes a SHA-256 hash linked to the previous event in this tenant's chain.
+  Verify integrity via <code>GET /api/v1/audit/chain/verify</code>.<br>
+  <em>This pack is auto-generated. ShellForge is licensed PolyForm Noncommercial 1.0.0.</em>
+</div>
+
+</body>
+</html>

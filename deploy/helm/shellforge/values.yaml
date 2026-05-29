@@ -1,0 +1,151 @@
+# ─────────────────────────────────────────────────────────────────────────
+# ShellForge — Helm Chart Values
+#
+# Every external dependency is configurable here. The chart itself does NOT
+# ship Postgres / Dex / Vault — it expects the customer to provide them and
+# point ShellForge at their endpoints. This is the swappability promise.
+# ─────────────────────────────────────────────────────────────────────────
+
+global:
+  env: production                     # local | staging | production
+  logLevel: INFO
+
+image:
+  controlPlane:
+    repository: ghcr.io/sanskarjaiswal2001/shellforge-control-plane
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  web:
+    repository: ghcr.io/sanskarjaiswal2001/shellforge-web
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+replicaCount:
+  controlPlane: 2
+  web: 2
+
+# ── Database (Postgres, external) ────────────────────────────────────────
+database:
+  # SET to an external Postgres URL. Required.
+  # Example: postgresql+asyncpg://user:pass@postgres.svc:5432/shellforge
+  url: ""
+  poolSize: 20
+  maxOverflow: 10
+
+# ── Identity (Dex or any OIDC IdP) ───────────────────────────────────────
+oidc:
+  issuer: ""                          # e.g. https://dex.example.com/dex OR https://yourtenant.okta.com
+  clientId: shellforge-web
+  clientSecret: ""                    # provide via secretRef instead of inline in prod
+  redirectUri: ""                     # e.g. https://shellforge.example.com/auth/callback
+  jwksCacheTtlSeconds: 3600
+  # If you don't run your own Dex, ShellForge speaks any OIDC issuer
+  # directly — just point at it. Common targets: Okta, Azure AD, Google.
+
+# ── Secrets backend (SecretProvider interface) ───────────────────────────
+secrets:
+  backend: infisical                  # infisical | vault | aws | env
+  pathPrefix: shellforge/tenants
+
+  infisical:
+    siteUrl: ""
+    projectId: ""
+    envSlug: prod
+    # client credentials via Kubernetes Secret reference (recommended)
+    existingSecret: ""                # k8s Secret containing INFISICAL_CLIENT_ID / INFISICAL_CLIENT_SECRET
+
+  vault:
+    addr: ""
+    namespace: ""
+    # token via secretRef
+    existingSecret: ""
+
+  aws:
+    region: us-east-1
+    # IAM via IRSA (preferred) — leave credentials empty if running on EKS
+
+# ── Audit / SIEM (OTel Collector) ────────────────────────────────────────
+audit:
+  backend: otel
+  otelEndpoint: ""                    # e.g. http://otel-collector.observability:4317
+  otelProtocol: grpc                  # grpc | http/protobuf
+  serviceName: shellforge-control-plane
+  hashChain:
+    enabled: true
+    genesisHash: "0000000000000000000000000000000000000000000000000000000000000000"
+
+# ── Compute provider (OpenShell or mock) ─────────────────────────────────
+compute:
+  backend: openshell                  # openshell | mock
+  openshell:
+    endpoint: ""                      # e.g. openshell-gateway.openshell:50051
+    authMode: mtls                    # mtls | oidc | plaintext
+    defaultComputeDriver: kubernetes  # docker | podman | microvm | kubernetes
+    mtls:
+      existingSecret: ""              # k8s TLS Secret with ca.crt / tls.crt / tls.key
+
+# ── PDF renderer ─────────────────────────────────────────────────────────
+pdf:
+  backend: weasyprint
+
+# ── Service / Ingress ────────────────────────────────────────────────────
+service:
+  controlPlane:
+    type: ClusterIP
+    port: 8000
+  web:
+    type: ClusterIP
+    port: 3000
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: shellforge.example.com
+      paths:
+        - path: /api/
+          service: control-plane
+        - path: /
+          service: web
+  tls: []
+
+# ── Resources ────────────────────────────────────────────────────────────
+resources:
+  controlPlane:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  web:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ── Pod settings ─────────────────────────────────────────────────────────
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: false       # weasyprint writes scratch files
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ── Migrations job ───────────────────────────────────────────────────────
+migrations:
+  enabled: true
+  image:
+    repository: ghcr.io/sanskarjaiswal2001/shellforge-control-plane
+    tag: "0.1.0"

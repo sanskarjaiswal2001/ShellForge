@@ -99,6 +99,10 @@ def compute_provider() -> ComputeProvider:
         from src.providers.compute.openshell_provider import OpenShellComputeProvider
         return OpenShellComputeProvider(settings)
 
+    if settings.compute_backend == "mock":
+        from src.providers.compute.mock_provider import MockComputeProvider
+        return MockComputeProvider()
+
     if settings.compute_backend == "docker":
         # Future direct-Docker fallback. Not implemented in MVP.
         raise NotImplementedError("Direct Docker compute backend not yet implemented.")
