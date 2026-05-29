@@ -24,12 +24,17 @@ def engine() -> AsyncEngine:
     global _engine
     if _engine is None:
         settings = get_settings()
+        # asyncpg defaults to trying TLS; for local Podman deployments the
+        # Postgres container has no TLS cert. Force ssl=False so the driver
+        # doesn't try to upgrade. In cloud deployments, remove this or pass
+        # ssl=True with the CA cert.
         _engine = create_async_engine(
             settings.database_url,
             pool_size=settings.database_pool_size,
             max_overflow=settings.database_max_overflow,
             pool_pre_ping=True,
             echo=False,
+            connect_args={"ssl": False},
         )
     return _engine
 
