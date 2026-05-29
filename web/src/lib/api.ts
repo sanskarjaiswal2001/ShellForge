@@ -17,10 +17,31 @@ export async function apiFetch<T>(path: string, opts: ApiOptions = {}): Promise<
   const res = await fetch(url, { ...rest, headers, cache: "no-store" });
 
   if (!res.ok) {
-    let detail = res.statusText;
+    let detail: string = res.statusText;
     try {
       const body = await res.json();
-      detail = body.detail || JSON.stringify(body);
+      const d = body?.detail ?? body;
+      if (typeof d === "string") {
+        detail = d;
+      } else if (Array.isArray(d)) {
+        // FastAPI validation errors: [{loc, msg, type, input, ctx}, ...]
+        detail = d
+          .map((e: unknown) => {
+            if (typeof e === "string") return e;
+            if (e && typeof e === "object") {
+              const obj = e as { loc?: unknown[]; msg?: string };
+              const loc = Array.isArray(obj.loc)
+                ? obj.loc.filter((p) => p !== "body").join(".")
+                : "";
+              return loc ? `${loc}: ${obj.msg ?? JSON.stringify(e)}` : obj.msg ?? JSON.stringify(e);
+            }
+            return String(e);
+          })
+          .join("; ");
+      } else if (d && typeof d === "object") {
+        const obj = d as { msg?: string };
+        detail = obj.msg ?? JSON.stringify(d);
+      }
     } catch {
       /* ignore */
     }
