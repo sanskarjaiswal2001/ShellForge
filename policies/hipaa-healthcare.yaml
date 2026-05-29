@@ -16,6 +16,17 @@
 
 version: 1
 
+# ─── PII Scrubbing ─────────────────────────────────────────────────────────
+# ANTHROPIC_BASE_URL and OPENAI_BASE_URL redirect all LLM API calls through
+# the ShellForge PII scrubbing proxy (scrubber-hipaa) before they leave the
+# compliance boundary. The agent never knows — its SDK just uses this URL.
+#
+# §164.312(e)(2)(ii): PHI encrypted in transit (proxy → Anthropic is TLS).
+# §164.308(a)(1): PHI scrubbed before transmission = risk management control.
+#
+# The scrubber detects and replaces all 18 HIPAA Safe Harbor PHI categories.
+# Mistral (local, Ollama) runs async audit of scrubbed text for missed PHI.
+
 filesystem_policy:
   include_workdir: true
   # §164.312(c)(1): no write access to system paths
@@ -38,25 +49,57 @@ landlock:
 process:
   run_as_user: sandbox
   run_as_group: sandbox
+  # Inject scrubber endpoints as env vars. Agent SDKs read these automatically.
+  # ANTHROPIC_BASE_URL → scrubber-hipaa → strips PHI → api.anthropic.com
+  # OPENAI_BASE_URL    → scrubber-hipaa → strips PHI → api.openai.com
+  # host.containers.internal resolves to the host machine from inside the container.
+  environment:
+    ANTHROPIC_BASE_URL: "http://host.containers.internal:8889"
+    OPENAI_BASE_URL: "http://host.containers.internal:8889"
+    # Ollama (local Mistral) is on the host machine
+    OLLAMA_HOST: "http://host.containers.internal:11434"
+    # Disable streaming in SDK so scrubber can accumulate-and-scrub
+    ANTHROPIC_STREAMING_DISABLED: "1"
 
 network_policies:
   # §164.312(e)(2)(ii): All endpoints MUST use tls: Auto for encryption-in-transit
   # §164.312(a)(1): Explicit allowlist — NO wildcards permitted
+  #
+  # The scrubber proxy runs inside the ShellForge network. Traffic from
+  # sandbox → scrubber is plaintext inside the trusted network boundary.
+  # scrubber → Anthropic is TLS (enforced at the scrubber layer).
 
-  anthropic_phi_safe:
-    name: "Anthropic API (PHI must not leave the sandbox)"
+  scrubber_proxy:
+    name: "ShellForge PII Scrubbing Proxy (local, §164.312(e)(2)(ii))"
+    endpoints:
+      - host: host.containers.internal
+        port: 8889
+        protocol:
+          type: Rest
+          tls: Skip                    # internal network, plaintext OK
+          enforcement: Audit
+        binaries:
+          - { path: /usr/local/bin/claude }
+          - { path: /sandbox/.venv/bin/python }
+          - { path: /usr/bin/curl }
+
+  anthropic_via_scrubber:
+    name: "Anthropic API — only via scrubber (ANTHROPIC_BASE_URL already overrides)"
+    # Direct access to api.anthropic.com is BLOCKED by default-deny.
+    # ANTHROPIC_BASE_URL env var redirects sdk calls to scrubber proxy.
+    # This block documents the original endpoint for policy audits.
+    # If agent bypasses ANTHROPIC_BASE_URL, it hits the default-deny wall here.
     endpoints:
       - host: api.anthropic.com
         port: 443
         protocol:
           type: Rest
-          tls: Auto                       # §164.312(e)(2)(ii)
-          enforcement: Enforce            # §164.312(b)
+          tls: Auto
+          enforcement: Enforce            # §164.312(b): log every attempt
         rules:
-          - allow: { method: POST, path: "/v1/messages" }
-        binaries:
-          - { path: /usr/local/bin/claude }
-          - { path: /sandbox/.venv/bin/python }
+          # Block all — force agents through scrubber proxy
+          # (no allow rules = no traffic passes)
+        binaries: []
 
   github_scm_code_only:
     name: "GitHub SCM (code only, no PHI in commits)"

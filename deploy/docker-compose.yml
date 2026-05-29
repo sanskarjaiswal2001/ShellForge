@@ -176,6 +176,52 @@ services:
     profiles: ["openshell"]                # opt-in; demo path doesn't need this
 
   # ─────────────────────────────────────────────────────────────────────────
+  # PII Scrubbing Proxy — HIPAA / PCI compliance boundary.
+  #
+  # Acts as a transparent reverse proxy for LLM API calls.
+  # Sandboxes created with HIPAA or PCI policy templates have
+  # ANTHROPIC_BASE_URL and OPENAI_BASE_URL set to this service.
+  # All agent API calls flow through Presidio + GLiNER scrubbing
+  # before reaching external providers.
+  #
+  # Two instances: one per compliance regime, each with different
+  # entity detection sensitivity.
+  # ─────────────────────────────────────────────────────────────────────────
+  scrubber-hipaa:
+    build:
+      context: ../scrubber
+      dockerfile: Dockerfile
+    container_name: shellforge-scrubber-hipaa
+    restart: unless-stopped
+    environment:
+      SCRUBBER_REGIME: hipaa
+      SCRUBBER_STREAM_MODE: accumulate
+      SCRUBBER_ASYNC_AUDIT_ENABLED: "true"
+      SCRUBBER_OLLAMA_ENDPOINT: "http://host.docker.internal:11434"
+      SCRUBBER_OLLAMA_MODEL: mistral
+    ports:
+      - "8889:8888"
+    networks:
+      - shellforge
+
+  scrubber-pci:
+    build:
+      context: ../scrubber
+      dockerfile: Dockerfile
+    container_name: shellforge-scrubber-pci
+    restart: unless-stopped
+    environment:
+      SCRUBBER_REGIME: pci
+      SCRUBBER_STREAM_MODE: accumulate
+      SCRUBBER_ASYNC_AUDIT_ENABLED: "true"
+      SCRUBBER_OLLAMA_ENDPOINT: "http://host.docker.internal:11434"
+      SCRUBBER_OLLAMA_MODEL: mistral
+    ports:
+      - "8890:8888"
+    networks:
+      - shellforge
+
+  # ─────────────────────────────────────────────────────────────────────────
   # ShellForge Control Plane (Python / FastAPI)
   # ─────────────────────────────────────────────────────────────────────────
   control-plane:
